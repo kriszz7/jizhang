@@ -441,6 +441,7 @@ input, select {
 .cal-cell.today { outline: 2px solid var(--brand); outline-offset: 1px; }
 .cal-cell.sel { outline: 2px solid var(--text-2); outline-offset: 1px; }
 .cal-cell .dot { position: absolute; bottom: 5px; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+.cal-cell .dot.dotin { right: 7px; left: auto; background: #f59e0b; opacity: 0.9; }
 [data-theme="dark"] .cal-cell.l1 { color: #34d399; }
 [data-theme="dark"] .cal-cell.l2 { color: #34d399; }
 
@@ -1001,3 +1002,59 @@ input[type="date"] { -webkit-appearance: none; appearance: none; min-height: 46p
 .src-row:active { background: var(--input-bg); }
 .src-row .mid { flex: 1; font-size: 14.5px; font-weight: 700; }
 .src-row .amt { font-size: 12.5px; color: var(--text-3); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- 纯记账模式(预算可关闭) ---------- */
+
+.ledger-grid {
+  display: flex; align-items: center; justify-content: center; gap: 26px;
+  padding: 14px 0 6px;
+}
+.ledger-main { text-align: center; }
+.ledger-main .k { font-size: 12.5px; font-weight: 700; color: var(--text-2); }
+.ledger-main .v {
+  margin-top: 2px;
+  font-size: 44px; font-weight: 800; letter-spacing: -1.2px;
+  font-variant-numeric: tabular-nums;
+  background: var(--grad);
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent;
+  line-height: 1.15;
+}
+.ledger-side { display: flex; flex-direction: column; gap: 7px; }
+.l-row { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.l-row span { font-size: 11px; font-weight: 600; color: var(--text-3); }
+.l-row b { font-size: 15.5px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.l-row b.pos { color: var(--brand-3); }
+.l-row b.neg { color: var(--danger); }
+[data-theme="dark"] .l-row b.pos { color: #34d399; }
+
+.onboard-link {
+  display: block;
+  margin: 16px auto 0;
+  border: none; background: none;
+  font-size: 13px; font-weight: 600;
+  color: var(--text-3);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ---------- 生活费入口(显眼但不突出) ---------- */
+
+.pill.pill-budget {
+  background: rgba(16, 185, 129, 0.12);
+  color: var(--brand-3);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.2s ease;
+}
+.pill.pill-budget:active { transform: scale(0.94); }
+[data-theme="dark"] .pill.pill-budget { color: #34d399; }
+
+/* 生活费功能页 */
+.budget-page { width: min(94%, 560px); }
+.budget-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.budget-head h3 { margin: 0; font-size: 18px; font-weight: 800; }
+.budget-page .hero { padding: 16px; }

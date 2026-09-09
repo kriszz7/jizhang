@@ -62,6 +62,7 @@
     return {
       version: 1,
       setupDone: false,
+      budgetMode: true,
       monthlyBudget: 1500,
       savingsTarget: 0,
       strategy: 'average',
@@ -71,7 +72,13 @@
       carryOver: false,
       categories: C.DEFAULT_CATEGORIES.map(function (c) {
         return { id: c.id, name: c.name, icon: c.icon, color: c.color, dailyPlan: c.dailyPlan };
-      })
+      }),
+      incomeCategories: [
+        { id: 'allowance', name: '生活费', icon: 'coin', color: '#f59e0b' },
+        { id: 'parttime', name: '兼职', icon: 'heart', color: '#8b5cf6' },
+        { id: 'redpacket', name: '红包', icon: 'cart', color: '#ef4444' },
+        { id: 'other-in', name: '其他', icon: 'dots', color: '#64748b' }
+      ]
     };
   }
 
@@ -86,9 +93,11 @@
     out.monthStartDay = Math.min(28, Math.max(1, Math.floor(out.monthStartDay) || 1));
     if (['auto', 'light', 'dark'].indexOf(out.theme) === -1) out.theme = 'auto';
     if (typeof out.carryOver !== 'boolean') out.carryOver = false;
+    if (typeof out.budgetMode !== 'boolean') out.budgetMode = true; // 旧数据缺省 → 保持预算模式
     if (typeof out.savingsTarget !== 'number' || !isFinite(out.savingsTarget)) out.savingsTarget = 0;
     out.savingsTarget = Math.min(999999, Math.max(0, Math.round(out.savingsTarget * 100) / 100));
     if (!Array.isArray(out.categories) || out.categories.length === 0) out.categories = d.categories;
+    if (!Array.isArray(out.incomeCategories) || out.incomeCategories.length === 0) out.incomeCategories = d.incomeCategories;
     return out;
   }
 
@@ -99,14 +108,17 @@
         typeof e.id === 'string' &&
         /^\d{4}-\d{2}-\d{2}$/.test(e.date) &&
         C.isValidAmount(e.amount) &&
-        (e.type === 'income' || typeof e.categoryId === 'string');
+        (e.type === 'income' || e.type === 'allowance' || typeof e.categoryId === 'string');
     }).map(function (e) {
-      var type = e.type === 'income' ? 'income' : 'expense';
+      // 旧数据迁移:type='allowance' → 普通收入 + 分类 'allowance'(生活费)
+      var type = e.type === 'income' || e.type === 'allowance' ? 'income' : 'expense';
+      var categoryId = e.categoryId;
+      if (e.type === 'allowance' && !categoryId) categoryId = 'allowance';
       return {
         id: e.id,
         date: e.date,
         amount: e.amount,
-        categoryId: type === 'income' ? '' : e.categoryId,
+        categoryId: type === 'expense' ? (categoryId || '') : (categoryId || ''),
         note: typeof e.note === 'string' ? e.note : '',
         createdAt: typeof e.createdAt === 'string' ? e.createdAt : '',
         type: type
@@ -144,19 +156,22 @@
   }
 
   /**
-   * 为每个预算月快照计算 carryIn(上月结余滚入本月):
-   * carryIn(月) = carryOver 开启时 max(0, 上月有效预算 - 上月净支出),否则 0。
-   * 按月份升序迭代,首个有记录的月份 carryIn = 0。
+   * 为每个预算月快照计算 carryIn(上月结余滚入本月)。
+   * 预算基数 = 该月实际到账的生活费(收入-生活费分类)+ 上月结转;
+   * 月结余 = 基数 - 净支出;carryIn(下月) = carryOver 开启时 max(0, 月结余)。
    */
   function applyCarryIns(out, settings, entries) {
     var keys = Object.keys(out).sort();
-    var prevEff = 0, prevNet = 0;
+    var prevSurplus = 0;
     for (var i = 0; i < keys.length; i++) {
       var snap = out[keys[i]];
-      var carry = settings.carryOver ? Math.max(0, C.round2(prevEff - prevNet)) : 0;
+      var monthEntries = C.entriesInMonth(entries, snap);
+      var received = C.round2(C.sumAllowances(monthEntries)); // 实际到账生活费
+      snap.budget = received; // 快照记录:该月实际到账
+      var carry = settings.carryOver ? Math.max(0, prevSurplus) : 0;
       snap.carryIn = carry;
-      prevEff = snap.budget + carry;
-      prevNet = C.netOf(C.entriesInMonth(entries, snap));
+      var net = C.netOf(monthEntries);
+      prevSurplus = C.round2(received + carry - net); // 本月结余 → 下月结转
     }
     return out;
   }

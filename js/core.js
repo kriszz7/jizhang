@@ -79,16 +79,29 @@
   function entriesInMonth(entries, bm) {
     return entries.filter(function (e) { return e.date >= bm.start && e.date <= bm.end; });
   }
-  function isIncome(e) { return !!(e && e.type === 'income'); }
-  /** 支出合计(不含收入) */
-  function sumExpenses(list) {
-    return round2(list.reduce(function (a, e) { return a + (isIncome(e) ? 0 : e.amount); }, 0));
+  var ALLOWANCE_CAT = 'allowance'; // 生活费收入分类 id
+  /** 普通收入(不含生活费):生活费是收入分类之一,但预算抵扣时需排除 */
+  function isIncome(e) { return !!(e && e.type === 'income' && e.categoryId !== ALLOWANCE_CAT); }
+  /** 生活费到账条目:计入总收支,但不参与预算抵扣(预算本身即生活费)。
+   *  兼容旧数据:type='allowance' 或 type='income' + 分类='allowance'。 */
+  function isAllowance(e) {
+    return !!(e && (e.type === 'allowance' || (e.type === 'income' && e.categoryId === ALLOWANCE_CAT)));
   }
-  /** 收入合计 */
+  /** 支出合计(不含收入与生活费) */
+  function sumExpenses(list) {
+    return round2(list.reduce(function (a, e) { return a + (isIncome(e) || isAllowance(e) ? 0 : e.amount); }, 0));
+  }
+  /** 收入合计(普通收入,不含生活费) */
   function sumIncomes(list) {
     return round2(list.reduce(function (a, e) { return a + (isIncome(e) ? e.amount : 0); }, 0));
   }
-  /** 净支出 = 支出 - 收入(可为负) */
+  /** 生活费合计 */
+  function sumAllowances(list) {
+    return round2(list.reduce(function (a, e) { return a + (isAllowance(e) ? e.amount : 0); }, 0));
+  }
+  /** 总入账合计 = 普通收入 + 生活费(用于总收支展示) */
+  function sumIncomesAll(list) { return round2(sumIncomes(list) + sumAllowances(list)); }
+  /** 净支出 = 支出 - 收入(可为负;不含生活费抵扣) */
   function netOf(list) { return round2(sumExpenses(list) - sumIncomes(list)); }
   /** 全部金额合计(不分类型,供历史兼容/测试) */
   function sumAmounts(list) {
@@ -100,15 +113,21 @@
   function incomeOnDay(entries, dateStr) {
     return sumIncomes(entries.filter(function (e) { return e.date === dateStr; }));
   }
+  function allowanceOnDay(entries, dateStr) {
+    return sumAllowances(entries.filter(function (e) { return e.date === dateStr; }));
+  }
+  function incomeAllOnDay(entries, dateStr) {
+    return round2(incomeOnDay(entries, dateStr) + allowanceOnDay(entries, dateStr));
+  }
   /** 某日净支出(支出 - 收入) */
   function spentOnDay(entries, dateStr) {
     return round2(expenseOnDay(entries, dateStr) - incomeOnDay(entries, dateStr));
   }
-  /** 某预算月内各分类支出 {categoryId: amount}(仅支出,不含收入) */
+  /** 某预算月内各分类支出 {categoryId: amount}(仅支出,不含收入与生活费) */
   function spentByCategory(entries, bm) {
     var map = {};
     entriesInMonth(entries, bm).forEach(function (e) {
-      if (isIncome(e)) return;
+      if (isIncome(e) || isAllowance(e)) return;
       map[e.categoryId] = round2((map[e.categoryId] || 0) + e.amount);
     });
     return map;
@@ -135,15 +154,49 @@
   function todayStats(settings, entries, today, snapshots) {
     var bm = getBudgetMonth(today, settings.monthStartDay);
     var snap = snapshotForMonth(snapshots, settings, bm);
-    var budget = effBudget(snap);
+    var carryIn = snap.carryIn || 0;
     var target = settings.savingsTarget ? Math.max(0, round2(settings.savingsTarget)) : 0;
-    var spendable = round2(budget - target);
     var monthEntries = entriesInMonth(entries, bm);
     var monthExpense = sumExpenses(monthEntries);
     var monthIncome = sumIncomes(monthEntries);
+    var monthAllowance = sumAllowances(monthEntries);
     var monthSpent = round2(monthExpense - monthIncome);
-    var remaining = round2(spendable - monthSpent);
     var left = daysLeft(bm, today);
+
+    /* 纯记账模式(budgetMode 关闭):不算预算,只报收支与结余 */
+    if (settings.budgetMode === false) {
+      var todayExpenseL = expenseOnDay(entries, today);
+      var todayIncomeL = incomeOnDay(entries, today);
+      var todayAllowanceL = allowanceOnDay(entries, today);
+      return {
+        bm: bm,
+        ledgerMode: true,
+        budget: 0,
+        carryIn: 0,
+        savingsTarget: 0,
+        spendable: 0,
+        monthExpense: monthExpense,
+        monthIncome: monthIncome,
+        monthAllowance: monthAllowance,
+        monthIncomeAll: round2(monthIncome + monthAllowance),
+        monthSpent: monthSpent,
+        remaining: 0,
+        daysLeft: left,
+        dailyBudget: 0,
+        todayExpense: todayExpenseL,
+        todayIncome: todayIncomeL,
+        todayAllowance: todayAllowanceL,
+        todayIncomeAll: round2(todayIncomeL + todayAllowanceL),
+        todaySpent: round2(todayExpenseL - todayIncomeL),
+        todaySavings: round2(todayIncomeL + todayAllowanceL - todayExpenseL),
+        projectedSaved: 0
+      };
+    }
+
+    /* 预算基数 = 本月实际到账的生活费 + 上月结转(不再使用设置里填的生活费) */
+    var budget = round2(monthAllowance + carryIn);
+    var spendable = round2(budget - target);
+    var remaining = round2(spendable - monthSpent);
     var daily;
     if (settings.strategy === 'fixed') {
       daily = round2(settings.fixedDaily);
@@ -152,35 +205,46 @@
     }
     var todayExpense = expenseOnDay(entries, today);
     var todayIncome = incomeOnDay(entries, today);
+    var todayAllowance = allowanceOnDay(entries, today);
     var todaySpent = round2(todayExpense - todayIncome);
     var todaySavings = round2(daily - todaySpent);
     var projected = round2(remaining - todaySpent - round2(daily * (left - 1)));
     return {
       bm: bm,
       budget: budget,
-      carryIn: snap.carryIn || 0,
+      carryIn: carryIn,
       savingsTarget: target,
       spendable: spendable,
       monthExpense: monthExpense,
       monthIncome: monthIncome,
+      monthAllowance: monthAllowance,
+      monthIncomeAll: round2(monthIncome + monthAllowance),
       monthSpent: monthSpent,
       remaining: remaining,
       daysLeft: left,
       dailyBudget: daily,
       todayExpense: todayExpense,
       todayIncome: todayIncome,
+      todayAllowance: todayAllowance,
+      todayIncomeAll: round2(todayIncome + todayAllowance),
       todaySpent: todaySpent,
       todaySavings: todaySavings,
       projectedSaved: projected
     };
   }
 
-  /** 快照有效预算 = 该月预算 + 上月结转(carryIn) */
-  function effBudget(snap) { return round2((snap.budget || 0) + (snap.carryIn || 0)); }
-  /** 历史月快照 → 该月每日预算(含结转) */
-  function dayBudgetFor(snap) {
+  /**
+   * 预算基数 = 当月实际到账生活费(allowance) + 结转。
+   * 不传 allowance 时回退到 snap.budget(历史兼容/工具函数使用)。
+   */
+  function effBudget(snap, allowance) {
+    var a = allowance == null ? (snap.budget || 0) : allowance;
+    return round2(a + (snap.carryIn || 0));
+  }
+  /** 历史月快照 → 该月每日预算(须传入该月实际到账生活费 allowance) */
+  function dayBudgetFor(snap, allowance) {
     if (snap.strategy === 'fixed') return round2(snap.fixedDaily);
-    return round2(effBudget(snap) / snap.days);
+    return round2(effBudget(snap, allowance) / snap.days);
   }
   /** 取某预算月快照;缺失时用当前设置合成(尽力近似) */
   function snapshotForMonth(snapshots, settings, bm) {
@@ -196,9 +260,11 @@
       carryIn: 0
     };
   }
-  /** 预算月内截至 upToDate(含)每天正向可存之和(超支日计 0 不扣罐) */
+  /** 预算月内截至 upToDate(含)每天正向可存之和(超支日计 0 不扣罐)。
+   *  每日预算基于该月实际到账生活费 + 结转。 */
   function monthSavings(entries, snap, upToDate) {
-    var dayBudget = dayBudgetFor(snap);
+    var allowance = sumAllowances(entriesInMonth(entries, snap));
+    var dayBudget = dayBudgetFor(snap, allowance);
     var total = 0;
     var idx = dayIndexInMonth(upToDate, snap);
     for (var i = 1; i <= idx; i++) {
@@ -209,7 +275,7 @@
   }
   /**
    * 存钱罐(累计存款):
-   *   Σ 已关闭预算月 max(0, 月预算 - 月支出)
+   *   Σ 已关闭预算月 max(0, 实际到账生活费 + 结转 - 月净支出)
    * + Σ 本月已过天数(含今天) max(0, 当日预算 - 当日已花)
    */
   function cumulativeSavings(entries, snapshots, settings, today) {
@@ -218,7 +284,9 @@
     Object.keys(snapshots || {}).forEach(function (key) {
       if (key < bm.key) {
         var snap = snapshots[key];
-        total += Math.max(0, round2(effBudget(snap) - netOf(entriesInMonth(entries, snap))));
+        var monthEntries = entriesInMonth(entries, snap);
+        var base = round2(sumAllowances(monthEntries) + (snap.carryIn || 0));
+        total += Math.max(0, round2(base - netOf(monthEntries)));
       }
     });
     var cur = snapshotForMonth(snapshots, settings, bm);
@@ -267,8 +335,11 @@
     daysLeft: daysLeft, monthKeyFromDate: monthKeyFromDate, monthLabel: monthLabel,
     entriesInMonth: entriesInMonth, sumAmounts: sumAmounts, spentOnDay: spentOnDay,
     spentByCategory: spentByCategory, spentInCategoryOnDay: spentInCategoryOnDay,
-    isIncome: isIncome, sumExpenses: sumExpenses, sumIncomes: sumIncomes, netOf: netOf,
-    expenseOnDay: expenseOnDay, incomeOnDay: incomeOnDay, effBudget: effBudget,
+    isIncome: isIncome, isAllowance: isAllowance, ALLOWANCE_CAT: ALLOWANCE_CAT,
+    sumExpenses: sumExpenses, sumIncomes: sumIncomes, sumAllowances: sumAllowances,
+    sumIncomesAll: sumIncomesAll, netOf: netOf,
+    expenseOnDay: expenseOnDay, incomeOnDay: incomeOnDay,
+    allowanceOnDay: allowanceOnDay, incomeAllOnDay: incomeAllOnDay, effBudget: effBudget,
     todayStats: todayStats, dayBudgetFor: dayBudgetFor, snapshotForMonth: snapshotForMonth,
     monthSavings: monthSavings, cumulativeSavings: cumulativeSavings,
     isValidAmount: isValidAmount, isValidNonNeg: isValidNonNeg,
