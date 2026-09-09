@@ -35,6 +35,7 @@
   };
 
   var prevSavings = 0; // 今日可存上次渲染值(数字滚动起点)
+  var APP_VERSION = 10; // 与 sw.js 的 piggy-v{N} 保持一致,发布新版本时同步 +1
 
   /* ================= 图标 ================= */
 
@@ -864,7 +865,10 @@
 
     /* 关于 */
     html += '<div class="set-section"><h3>关于</h3><div class="card">' +
-      '<div class="set-row"><span class="k">版本</span><span style="color:var(--text-3);font-size:13px">存钱罐 v1.0.0</span></div>' +
+      '<div class="set-row"><span class="k">版本<span class="hint">SW 缓存 piggy-' + APP_VERSION + '</span></span>' +
+      '<span style="color:var(--text-3);font-size:13px">存钱罐 v' + APP_VERSION + '</span></div>' +
+      '<div class="set-row"><span class="k">检查并更新<span class="hint">从服务器拉取新版本;只清缓存,记账数据保留</span></span>' +
+      '<button class="btn ghost small" data-act="update-app">更新</button></div>' +
       '<div class="set-row"><span class="k">数据位置<span class="hint">仅保存在本机浏览器,不会上传</span></span></div>' +
       (isIOS && !standalone
         ? '<div class="set-row"><span class="k">添加到主屏幕<span class="hint">像 App 一样全屏使用、离线可用</span></span>' +
@@ -1241,6 +1245,39 @@
     }, 700);
   }
 
+  /* ================= 一键检查更新(只清缓存,保留数据) ================= */
+
+  function checkForUpdate() {
+    if (!/^https?:$/.test(location.protocol)) {
+      showToast('本地文件模式,无需更新');
+      return;
+    }
+    if (!('serviceWorker' in navigator) || !('caches' in window)) {
+      showToast('请手动刷新页面');
+      return;
+    }
+    showToast('正在检查更新…', 4000);
+    function reloadSoon() {
+      setTimeout(function () { location.reload(); }, 700);
+    }
+    function clearCachesThenReload() {
+      caches.keys().then(function (keys) {
+        return Promise.all(keys.filter(function (k) { return /^piggy-/.test(k); })
+          .map(function (k) { return caches.delete(k); }));
+      }).then(reloadSoon, reloadSoon);
+    }
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (reg && typeof reg.update === 'function') {
+        var p;
+        try { p = reg.update(); } catch (e) { clearCachesThenReload(); return; }
+        if (p && typeof p.then === 'function') p.then(reloadSoon, clearCachesThenReload);
+        else clearCachesThenReload();
+      } else {
+        clearCachesThenReload();
+      }
+    }).catch(clearCachesThenReload);
+  }
+
   /* ================= 数据操作 ================= */
 
   function doExport() {
@@ -1592,6 +1629,9 @@
         break;
       case 'install-help':
         $('#install-modal').classList.add('open');
+        break;
+      case 'update-app':
+        checkForUpdate();
         break;
       case 'onboard-next': onboardNext(); break;
       case 'onboard-day': onboardPickDay(node.getAttribute('data-day')); break;
