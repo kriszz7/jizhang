@@ -123,22 +123,26 @@
 
   /**
    * 当日全景统计。
-   * 净支出 = 支出 - 收入;剩余 = 有效预算(含结转) - 净支出;
+   * 净支出 = 支出 - 收入;可花总额 = 有效预算(含结转) - 本月存钱目标;
+   * 剩余 = 可花总额 - 净支出;
    * 动态平均法:今日预算 = max(0, 剩余 ÷ 剩余天数);
-   * 固定额度法:今日预算 = fixedDaily;
+   * 固定额度法:今日预算 = fixedDaily(月目标仅作进度参考);
    * 今日可存 = 今日预算 - 今日净支出(负值即超支);
    * 预计月末可存 = 剩余 - 今日净支出 - 今日预算 × (剩余天数 - 1)。
    * @param {object} [snapshots] 月度快照(含 carryIn 结转);缺省时结转视为 0。
+   * @param {number} [settings.savingsTarget] 本月存钱目标(0 = 未设,负数按 0)。
    */
   function todayStats(settings, entries, today, snapshots) {
     var bm = getBudgetMonth(today, settings.monthStartDay);
     var snap = snapshotForMonth(snapshots, settings, bm);
     var budget = effBudget(snap);
+    var target = settings.savingsTarget ? Math.max(0, round2(settings.savingsTarget)) : 0;
+    var spendable = round2(budget - target);
     var monthEntries = entriesInMonth(entries, bm);
     var monthExpense = sumExpenses(monthEntries);
     var monthIncome = sumIncomes(monthEntries);
     var monthSpent = round2(monthExpense - monthIncome);
-    var remaining = round2(budget - monthSpent);
+    var remaining = round2(spendable - monthSpent);
     var left = daysLeft(bm, today);
     var daily;
     if (settings.strategy === 'fixed') {
@@ -155,6 +159,8 @@
       bm: bm,
       budget: budget,
       carryIn: snap.carryIn || 0,
+      savingsTarget: target,
+      spendable: spendable,
       monthExpense: monthExpense,
       monthIncome: monthIncome,
       monthSpent: monthSpent,

@@ -30,6 +30,7 @@
     form: null,
     onboard: null,
     toastTimer: null,
+    transfer: null,
     search: { q: '', type: '', cat: '', min: '', max: '' }
   };
 
@@ -83,17 +84,22 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span>';
   }
   function entryRowHTML(e) {
+    var acts = '<span class="row-actions">' +
+      '<button class="mini-btn" data-act="edit-entry" data-id="' + e.id + '" aria-label="编辑">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3l4 4L8 20l-5 1 1-5L17 3z"/></svg></button>' +
+      '<button class="mini-btn danger" data-act="del-entry" data-id="' + e.id + '" aria-label="删除">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg></button></span>';
     if (e.type === 'income') {
       return '<div class="entry-row" data-act="edit-entry" data-id="' + e.id + '">' + incomeBadgeHTML() +
         '<div class="mid"><div class="name">收入</div>' +
         (e.note ? '<div class="note">' + esc(e.note) + '</div>' : '') + '</div>' +
-        '<span class="amount in">+' + C.fmtMoney(e.amount) + '</span></div>';
+        '<span class="amount in">+' + C.fmtMoney(e.amount) + '</span>' + acts + '</div>';
     }
     var cat = catById(e.categoryId);
     return '<div class="entry-row" data-act="edit-entry" data-id="' + e.id + '">' + badgeHTML(cat) +
       '<div class="mid"><div class="name">' + esc(cat ? cat.name : '未知分类') + '</div>' +
       (e.note ? '<div class="note">' + esc(e.note) + '</div>' : '') + '</div>' +
-      '<span class="amount out">-' + C.fmtMoney(e.amount) + '</span></div>';
+      '<span class="amount out">-' + C.fmtMoney(e.amount) + '</span>' + acts + '</div>';
   }
   function fmtDateCN(dateStr) {
     var p = C.parseDateStr(dateStr);
@@ -236,7 +242,7 @@
       '<div class="hero-stats">' +
       '<div class="stat"><div class="k">今日预算</div><div class="v">' + C.fmtMoney(stats.dailyBudget) + '</div></div>' +
       '<div class="stat"><div class="k">今日支出</div><div class="v">' + C.fmtMoney(stats.todayExpense) + '</div></div>' +
-      '<div class="stat"><div class="k">本月剩余</div><div class="v ' + (stats.remaining < 0 ? 'neg' : '') + '">' + C.fmtMoney(stats.remaining) + '</div></div>' +
+      '<div class="stat"><div class="k">' + (stats.savingsTarget > 0 ? '剩余可花' : '本月剩余') + '</div><div class="v ' + (stats.remaining < 0 ? 'neg' : '') + '">' + C.fmtMoney(stats.remaining) + '</div></div>' +
       '</div>' +
       (stats.todayIncome > 0
         ? '<div class="proj-row" style="padding-top:6px"><span style="color:var(--brand-3);font-weight:700">今日收入</span><b class="pos">+' + C.fmtMoney(stats.todayIncome) + '</b></div>'
@@ -244,6 +250,24 @@
       '<div class="proj-row"><span>预计月末可存 <span style="color:var(--text-3);font-size:11.5px">(按当前节奏)</span></span>' +
       '<b class="' + (stats.projectedSaved >= 0 ? 'pos' : 'neg') + '">' + C.fmtMoney(stats.projectedSaved) + '</b></div>' +
       '</div>';
+
+    /* 月度存钱目标进度卡 */
+    if (stats.savingsTarget > 0) {
+      var snapNow = C.snapshotForMonth(snapshots, settings, stats.bm);
+      var savedT = C.monthSavings(entries, snapNow, today);
+      var pctT = Math.min(100, Math.round(savedT / stats.savingsTarget * 100));
+      var needT = Math.max(0, C.round2((stats.savingsTarget - savedT) / Math.max(1, stats.daysLeft)));
+      html += '<div class="card target-card">' +
+        '<div class="target-top"><span class="t-name">本月存钱目标</span>' +
+        '<span class="t-amount">' + C.fmtMoney(stats.savingsTarget) + '</span></div>' +
+        '<div class="bar"><i style="width:' + pctT + '%"></i></div>' +
+        '<div class="target-sub">' +
+        (savedT >= stats.savingsTarget
+          ? '<span class="pill ok">已达成 🎉</span><span>已存 ' + C.fmtMoney(savedT) + ' · 含收入</span>'
+          : '<span>已存 ' + C.fmtMoney(savedT) + ' · 还差 ' + C.fmtMoney(C.round2(stats.savingsTarget - savedT)) + '</span>' +
+            '<span>此后每天存 ' + C.fmtMoney(needT) + ' 即达成</span>') +
+        '</div></div>';
+    }
 
     /* 超支 / 接近预算横幅 */
     if (stats.todaySavings < 0) {
@@ -272,7 +296,9 @@
     html += '</div>';
 
     /* 今日账单 */
-    html += '<div class="section-title"><span>今日账单' + (tds.length ? ' · ' + tds.length + ' 笔' : '') + '</span></div>' +
+    html += '<div class="section-title"><span>今日账单' + (tds.length ? ' · ' + tds.length + ' 笔' : '') + '</span>' +
+      (tds.length ? '<button class="btn ghost small" data-act="del-day" data-date="' + today + '">清空今天</button>' : '') +
+      '</div>' +
       '<div class="card">';
     if (!tds.length) {
       html += emptyStateHTML('今天还没有记账', '记录第一笔消费,开始攒钱吧');
@@ -500,6 +526,7 @@
       '<span class="sep">·</span><i style="background:rgba(16,185,129,.42)"></i>花得少' +
       '<span class="sep">·</span><i style="background:rgba(16,185,129,.14)"></i>接近预算' +
       '<span class="sep">·</span><i style="background:rgba(239,68,68,.16)"></i>超支' +
+      '<button class="btn ghost small" data-act="del-month" style="margin-left:auto">清空本月</button>' +
       '</div></div>';
 
     /* 选中日详情 */
@@ -510,7 +537,9 @@
     var dayEntries = entries.filter(function (e) { return e.date === sd; })
       .sort(function (a, b) { return (a.createdAt || '').localeCompare(b.createdAt || ''); });
 
-    html += '<div class="section-title"><span>' + fmtDateCN(sd) + ' 明细</span></div>' +
+    html += '<div class="section-title"><span>' + fmtDateCN(sd) + ' 明细</span>' +
+      (dayEntries.length ? '<button class="btn ghost small" data-act="del-day" data-date="' + sd + '">删除这天账单</button>' : '') +
+      '</div>' +
       '<div class="card day-summary">' +
       '<div class="hero-stats">' +
       '<div class="stat"><div class="k">当日预算</div><div class="v">' + C.fmtMoney(sBudget) + '</div></div>' +
@@ -584,6 +613,9 @@
       '<div class="sum-cell"><div class="k">累计存款</div><div class="v pos">' + C.fmtMoney(cum) + '</div></div>' +
       '</div>' +
       '<div class="proj-row"><span>本月预算' + (snap.carryIn > 0 ? ' <span style="color:var(--text-3);font-size:11.5px">(含结转 ' + C.fmtMoney(snap.carryIn) + ')</span>' : '') + '</span><b>' + C.fmtMoney(effBudget) + '</b></div>' +
+      (settings.savingsTarget > 0
+        ? '<div class="proj-row" style="padding-top:0"><span>本月存钱目标</span><b class="pos">' + C.fmtMoney(settings.savingsTarget) + '</b></div>'
+        : '') +
       '<div class="proj-row" style="padding-top:0"><span style="color:var(--text-3);font-size:11.5px">净支出 ' + C.fmtMoney(netSpent) + ' · 使用率 ' + usePct + '%</span></div>' +
       '<div class="bar' + (usePct > 100 ? ' over' : (usePct >= 80 ? ' warn' : '')) + '" style="margin-top:6px"><i style="width:' + Math.min(100, Math.max(0, usePct)) + '%"></i></div>' +
       '</div>';
@@ -667,12 +699,26 @@
     var isIOS = detectIOS();
     var standalone = isStandalone();
 
-    var cats = '';
+    var bmNow = C.getBudgetMonth(today, settings.monthStartDay);
+    var snapNow = C.snapshotForMonth(snapshots, settings, bmNow);
+    var perDayAlloc = C.round2(Math.max(0, C.effBudget(snapNow) - (settings.savingsTarget || 0)) / bmNow.days);
+    var sumAlloc = C.round2(settings.categories.reduce(function (a, c2) { return a + c2.dailyPlan; }, 0));
+    var diffAlloc = C.round2(perDayAlloc - sumAlloc);
+    var cats = '<div class="alloc-head">' +
+      '<span>分类合计 <b>' + C.fmtMoney(sumAlloc) + '</b>/天 · 可花 <b>' + C.fmtMoney(perDayAlloc) + '</b>/天</span>' +
+      '<span class="alloc-diff' + (diffAlloc < 0 ? ' over' : '') + '">' +
+      (diffAlloc >= 0 ? '未分配 ' + C.fmtMoney(diffAlloc) : '超出 ' + C.fmtMoney(Math.abs(diffAlloc))) + '</span>' +
+      '<button class="btn ghost small" data-act="alloc-auto">自动分配</button></div>';
     for (var i = 0; i < settings.categories.length; i++) {
       var c = settings.categories[i];
-      cats += '<div class="cat-edit-row">' + badgeHTML(c) +
+      cats += '<div class="cat-edit-row alloc-row">' + badgeHTML(c) +
         '<div class="mid"><div class="nm">' + esc(c.name) + '</div>' +
-        '<div class="dp">每日计划 ' + C.fmtMoney(c.dailyPlan) + '</div></div>' +
+        '<div class="dp">每日 ' + C.fmtMoney(c.dailyPlan) + ' · 约 ' + C.fmtMoney(C.round2(c.dailyPlan * bmNow.days)) + '/月</div></div>' +
+        '<div class="stepper">' +
+        '<button class="step-btn" data-act="alloc-minus" data-id="' + c.id + '" aria-label="减5元">−</button>' +
+        '<span class="step-val">' + C.fmtNum(c.dailyPlan) + '</span>' +
+        '<button class="step-btn" data-act="alloc-plus" data-id="' + c.id + '" aria-label="加5元">＋</button>' +
+        '</div>' +
         '<button class="btn ghost small" data-act="edit-cat" data-id="' + c.id + '">编辑</button></div>';
     }
 
@@ -682,6 +728,8 @@
     html += '<div class="set-section"><h3>预算</h3><div class="card">' +
       '<div class="set-row"><span class="k">每月生活费<span class="hint">到账后可用于整月开销的总额</span></span>' +
       '<input class="num-input" id="in-budget" type="number" inputmode="decimal" min="1" step="0.01" value="' + settings.monthlyBudget + '"></div>' +
+      '<div class="set-row"><span class="k">本月存钱目标<span class="hint">先定目标再花钱,每日预算会自动收紧;0 = 不设</span></span>' +
+      '<input class="num-input" id="in-target" type="number" inputmode="decimal" min="0" step="0.01" value="' + settings.savingsTarget + '"></div>' +
       '<div class="set-row"><span class="k">生活费到账日<span class="hint">每月几号到账(1–28 号)</span></span>' +
       '<select class="select-input" id="in-startday">' +
       (function () {
@@ -712,8 +760,8 @@
       '<button data-act="theme" data-val="dark" class="' + (settings.theme === 'dark' ? 'on' : '') + '">深色</button>' +
       '</span></div></div></div>';
 
-    /* 分类 */
-    html += '<div class="set-section"><h3>消费分类</h3><div class="card">' + cats +
+    /* 分类预算分配中心 */
+    html += '<div class="set-section"><h3>消费分类预算(按天,总额锁定)</h3><div class="card">' + cats +
       '<div style="padding:10px 4px 2px"><button class="btn ghost small" data-act="add-cat">+ 新增分类</button></div>' +
       '</div></div>';
 
@@ -999,7 +1047,9 @@
   }
 
   function showForm(opts) {
-    state.form = opts;
+    // 关键修复:合并而不是覆盖 state.form —— openCatForm/openGoalForm 先写入的
+    // id/color/icon/onOk 会被 opts 覆盖掉,导致保存时 f.onOk 为 undefined 而"无反应"。
+    state.form = Object.assign({}, state.form, opts);
     $('#form-title').textContent = opts.title;
     $('#form-ok').textContent = opts.okText || '保存';
     var html = '<div class="form-body">';
@@ -1104,6 +1154,144 @@
     }, '清空');
   }
 
+  /* ---------- 粒度删除(按笔 / 按天 / 按月) ---------- */
+
+  function deleteEntryById(id) {
+    var e = null;
+    for (var i = 0; i < entries.length; i++) {
+      if (entries[i].id === id) { e = entries[i]; break; }
+    }
+    if (!e) return;
+    showConfirm('删除账单', '删除这笔 ' + C.fmtMoney(e.amount) + ' 的记录?', function () {
+      entries = entries.filter(function (x) { return x.id !== id; });
+      saveAll();
+      showToast('已删除');
+      render();
+    }, '删除');
+  }
+
+  function deleteEntriesByDate(date) {
+    var n = entries.filter(function (x) { return x.date === date; }).length;
+    if (!n) return;
+    showConfirm('删除该天账单', '将删除 ' + fmtDateCN(date) + ' 的全部 ' + n + ' 笔账单(支出和收入)。建议先导出备份,确定删除?', function () {
+      entries = entries.filter(function (x) { return x.date !== date; });
+      saveAll();
+      showToast('已删除 ' + n + ' 笔');
+      render();
+    }, '删除');
+  }
+
+  function deleteEntriesInMonth() {
+    var bm = bmFromKey(state.calMonth);
+    var n = entries.filter(function (x) { return x.date >= bm.start && x.date <= bm.end; }).length;
+    if (!n) return;
+    showConfirm('清空本月账单', '将删除 ' + C.monthLabel(bm.key) + '(' + bm.start + ' ~ ' + bm.end + ')的全部 ' + n + ' 笔账单。建议先导出备份,确定删除?', function () {
+      entries = entries.filter(function (x) { return x.date < bm.start || x.date > bm.end; });
+      saveAll();
+      showToast('已删除 ' + n + ' 笔');
+      render();
+    }, '清空');
+  }
+
+  /* ---------- 分类预算分配中心 ---------- */
+
+  function allocInfo() {
+    var bmNow = C.getBudgetMonth(today, settings.monthStartDay);
+    var snapNow = C.snapshotForMonth(snapshots, settings, bmNow);
+    var perDay = C.round2(Math.max(0, C.effBudget(snapNow) - (settings.savingsTarget || 0)) / bmNow.days);
+    var sum = C.round2(settings.categories.reduce(function (a, c) { return a + c.dailyPlan; }, 0));
+    return { perDay: perDay, sum: sum, diff: C.round2(perDay - sum), days: bmNow.days };
+  }
+
+  function allocAuto() {
+    var info = allocInfo();
+    var perDay = info.perDay;
+    var sum = info.sum;
+    var cats = settings.categories;
+    var i;
+    if (sum > 0) {
+      for (i = 0; i < cats.length; i++) {
+        cats[i].dailyPlan = C.round2(perDay * cats[i].dailyPlan / sum);
+      }
+    } else {
+      for (i = 0; i < cats.length; i++) {
+        cats[i].dailyPlan = C.round2(perDay / cats.length);
+      }
+    }
+    saveSettingsOnly();
+    showToast('已按当前比例自动分配');
+    render();
+  }
+
+  function allocPlus(id) {
+    var cat = catById(id);
+    if (!cat) return;
+    var delta = 5;
+    var info = allocInfo();
+    if (info.diff >= delta) {
+      cat.dailyPlan = C.round2(cat.dailyPlan + delta);
+      saveSettingsOnly();
+      showToast('「' + cat.name + '」+' + delta + ' 元/天(从未分配中取)');
+      render();
+      return;
+    }
+    var srcs = settings.categories.filter(function (c) {
+      return c.id !== id && c.dailyPlan >= delta;
+    });
+    if (!srcs.length) {
+      showToast('没有足够预算可挪,请先减少其他分类', 2600);
+      return;
+    }
+    state.transfer = { targetId: id, delta: delta };
+    renderTransferModal();
+  }
+
+  function allocMinus(id) {
+    var cat = catById(id);
+    if (!cat) return;
+    var before = cat.dailyPlan;
+    cat.dailyPlan = C.round2(Math.max(0, cat.dailyPlan - 5));
+    if (cat.dailyPlan === before) { showToast('该分类预算已是 0'); return; }
+    saveSettingsOnly();
+    showToast('「' + cat.name + '」-5 元/天,回到未分配池');
+    render();
+  }
+
+  function renderTransferModal() {
+    var t = state.transfer;
+    if (!t) return;
+    var tgt = catById(t.targetId);
+    var srcs = settings.categories.filter(function (c) {
+      return c.id !== t.targetId && c.dailyPlan >= t.delta;
+    });
+    $('#transfer-target').textContent = '「' + tgt.name + '」+¥' + t.delta + '/天,从哪个分类扣除?';
+    var html = '';
+    for (var i = 0; i < srcs.length; i++) {
+      var c = srcs[i];
+      html += '<div class="src-row" data-act="pick-source" data-id="' + c.id + '">' + badgeHTML(c) +
+        '<span class="mid">' + esc(c.name) + '</span>' +
+        '<span class="amt">可扣 ' + C.fmtMoney(c.dailyPlan) + '</span></div>';
+    }
+    $('#transfer-body').innerHTML = html;
+    $('#transfer-modal').classList.add('open');
+    bindDynamic();
+  }
+
+  function pickSource(srcId) {
+    var t = state.transfer;
+    if (!t) return;
+    var src = catById(srcId);
+    var tgt = catById(t.targetId);
+    if (!src || !tgt) return;
+    src.dailyPlan = C.round2(src.dailyPlan - t.delta);
+    tgt.dailyPlan = C.round2(tgt.dailyPlan + t.delta);
+    saveSettingsOnly();
+    $('#transfer-modal').classList.remove('open');
+    state.transfer = null;
+    showToast('已从「' + src.name + '」挪 ' + C.fmtMoney(t.delta) + ' 给「' + tgt.name + '」');
+    render();
+  }
+
   /* ================= 事件绑定 ================= */
 
   function bindDynamic() {
@@ -1129,6 +1317,23 @@
         settings.monthlyBudget = C.round2(v);
         saveSettingsOnly();
         showToast('已保存');
+        render();
+      });
+    }
+    var target = $('#in-target');
+    if (target && !target._bound) {
+      target._bound = true;
+      target.addEventListener('change', function () {
+        var v = parseFloat(target.value);
+        if (!C.isValidNonNeg(v)) { showToast('请输入 0 或正数'); target.value = settings.savingsTarget; return; }
+        if (v > settings.monthlyBudget) {
+          showToast('目标不能超过生活费 ' + C.fmtMoney(settings.monthlyBudget), 2600);
+          target.value = settings.savingsTarget;
+          return;
+        }
+        settings.savingsTarget = C.round2(v);
+        saveSettingsOnly();
+        showToast(v > 0 ? '本月目标:存 ' + C.fmtMoney(v) + ' 🎯' : '已取消存钱目标');
         render();
       });
     }
@@ -1169,6 +1374,19 @@
           if (entries[i].id === id) { openSheet('edit', entries[i]); break; }
         }
         break;
+      case 'del-entry':
+        deleteEntryById(node.getAttribute('data-id'));
+        break;
+      case 'del-day':
+        deleteEntriesByDate(node.getAttribute('data-date'));
+        break;
+      case 'del-month':
+        deleteEntriesInMonth();
+        break;
+      case 'alloc-auto': allocAuto(); break;
+      case 'alloc-plus': allocPlus(node.getAttribute('data-id')); break;
+      case 'alloc-minus': allocMinus(node.getAttribute('data-id')); break;
+      case 'pick-source': pickSource(node.getAttribute('data-id')); break;
       case 'cal-cell':
         date = node.getAttribute('data-date');
         if (date && date <= today) { state.selDay = date; renderCalendar(); }
@@ -1224,7 +1442,7 @@
       case 'dismiss-backup':
         meta.lastRemindedAt = new Date().toISOString();
         S.saveMeta(meta);
-        renderToday();
+        render(); // 修复:直接 renderToday 会导致新节点丢失事件绑定
         break;
       case 'install-help':
         $('#install-modal').classList.add('open');
@@ -1404,6 +1622,10 @@
     });
     $('#form-cancel').addEventListener('click', closeForm);
     $('#form-ok').addEventListener('click', formOk);
+    $('#transfer-cancel').addEventListener('click', function () {
+      $('#transfer-modal').classList.remove('open');
+      state.transfer = null;
+    });
     document.addEventListener('click', function (ev) {
       if (ev.target.id === 'f-delete') formDeleteCat();
     });

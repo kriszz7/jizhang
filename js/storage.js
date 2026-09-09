@@ -63,6 +63,7 @@
       version: 1,
       setupDone: false,
       monthlyBudget: 1500,
+      savingsTarget: 0,
       strategy: 'average',
       fixedDaily: 50,
       monthStartDay: 1,
@@ -85,6 +86,8 @@
     out.monthStartDay = Math.min(28, Math.max(1, Math.floor(out.monthStartDay) || 1));
     if (['auto', 'light', 'dark'].indexOf(out.theme) === -1) out.theme = 'auto';
     if (typeof out.carryOver !== 'boolean') out.carryOver = false;
+    if (typeof out.savingsTarget !== 'number' || !isFinite(out.savingsTarget)) out.savingsTarget = 0;
+    out.savingsTarget = Math.min(999999, Math.max(0, Math.round(out.savingsTarget * 100) / 100));
     if (!Array.isArray(out.categories) || out.categories.length === 0) out.categories = d.categories;
     return out;
   }
