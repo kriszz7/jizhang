@@ -119,9 +119,10 @@
   function incomeAllOnDay(entries, dateStr) {
     return round2(incomeOnDay(entries, dateStr) + allowanceOnDay(entries, dateStr));
   }
-  /** 某日净支出(支出 - 收入) */
+  /** 某日净支出(支出 - 普通收入;生活费不计入)。
+   *  预算口径统一用支出:普通收入不冲抵预算。 */
   function spentOnDay(entries, dateStr) {
-    return round2(expenseOnDay(entries, dateStr) - incomeOnDay(entries, dateStr));
+    return sumExpenses(entries.filter(function (e) { return e.date === dateStr; }));
   }
   /** 某预算月内各分类支出 {categoryId: amount}(仅支出,不含收入与生活费) */
   function spentByCategory(entries, bm) {
@@ -193,10 +194,11 @@
       };
     }
 
-    /* 预算基数 = 本月实际到账的生活费 + 上月结转(不再使用设置里填的生活费) */
+    /* 预算基数 = 本月实际到账的生活费 + 上月结转(不使用设置金额);
+     * 预算只按支出计算:普通收入不冲抵、不抬高预算。 */
     var budget = round2(monthAllowance + carryIn);
     var spendable = round2(budget - target);
-    var remaining = round2(spendable - monthSpent);
+    var remaining = round2(spendable - monthExpense);
     var daily;
     if (settings.strategy === 'fixed') {
       daily = round2(settings.fixedDaily);
@@ -206,9 +208,9 @@
     var todayExpense = expenseOnDay(entries, today);
     var todayIncome = incomeOnDay(entries, today);
     var todayAllowance = allowanceOnDay(entries, today);
-    var todaySpent = round2(todayExpense - todayIncome);
-    var todaySavings = round2(daily - todaySpent);
-    var projected = round2(remaining - todaySpent - round2(daily * (left - 1)));
+    var todaySpent = todayExpense;                       // 预算口径:今日支出
+    var todaySavings = round2(daily - todayExpense);     // 今日可存 = 预算 - 支出
+    var projected = round2(remaining - todayExpense - round2(daily * (left - 1)));
     return {
       bm: bm,
       budget: budget,
@@ -219,7 +221,7 @@
       monthIncome: monthIncome,
       monthAllowance: monthAllowance,
       monthIncomeAll: round2(monthIncome + monthAllowance),
-      monthSpent: monthSpent,
+      monthSpent: round2(monthExpense - monthIncome),
       remaining: remaining,
       daysLeft: left,
       dailyBudget: daily,
@@ -286,7 +288,7 @@
         var snap = snapshots[key];
         var monthEntries = entriesInMonth(entries, snap);
         var base = round2(sumAllowances(monthEntries) + (snap.carryIn || 0));
-        total += Math.max(0, round2(base - netOf(monthEntries)));
+        total += Math.max(0, round2(base - sumExpenses(monthEntries)));
       }
     });
     var cur = snapshotForMonth(snapshots, settings, bm);

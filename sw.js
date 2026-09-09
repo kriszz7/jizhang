@@ -3,7 +3,7 @@
  * 缓存应用壳 → 首次访问后完全离线可用。
  * 更新发布时请同时修改 CACHE 版本号(如 piggy-v2)。
  * ============================================================ */
-const CACHE = 'piggy-v8';
+const CACHE = 'piggy-v9';
 const ASSETS = [
   './',
   './index.html',

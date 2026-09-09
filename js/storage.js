@@ -170,8 +170,8 @@
       snap.budget = received; // 快照记录:该月实际到账
       var carry = settings.carryOver ? Math.max(0, prevSurplus) : 0;
       snap.carryIn = carry;
-      var net = C.netOf(monthEntries);
-      prevSurplus = C.round2(received + carry - net); // 本月结余 → 下月结转
+      var expense = C.sumExpenses(monthEntries); // 预算只按支出计算,普通收入不冲抵
+      prevSurplus = C.round2(received + carry - expense); // 本月结余 → 下月结转
     }
     return out;
   }

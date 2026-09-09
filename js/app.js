@@ -650,7 +650,7 @@
     } else {
       html += '<div class="hero-stats">' +
         '<div class="stat"><div class="k">当日预算</div><div class="v">' + C.fmtMoney(sBudget) + '</div></div>' +
-        '<div class="stat"><div class="k">当日净花</div><div class="v">' + C.fmtMoney(sSpent) + '</div></div>' +
+        '<div class="stat"><div class="k">当日支出</div><div class="v">' + C.fmtMoney(sSpent) + '</div></div>' +
         '<div class="stat"><div class="k">当日可存</div><div class="v ' + (sSaved < 0 ? 'neg' : '') + '">' + C.fmtMoney(sSaved) + '</div></div>' +
         '</div>';
     }
@@ -675,7 +675,7 @@
     var monthIncome = C.sumIncomes(monthEntries);
     var monthAllowance = C.sumAllowances(monthEntries);
     var monthIncomeAll = C.round2(monthIncome + monthAllowance);
-    var netSpent = C.netOf(monthEntries);
+    var spendOnly = monthExpense;                        // 预算口径:只看支出
     var total = monthExpense; // 环形图只统计支出
     var byCat = C.spentByCategory(entries, bm);
     var snap = C.snapshotForMonth(snapshots, settings, bm);
@@ -689,8 +689,8 @@
       ? C.round2(monthIncomeAll - monthExpense)
       : (isCurrent
         ? C.monthSavings(entries, snap, today)
-        : Math.max(0, C.round2(effBudget - netSpent)));
-    var usePct = effBudget > 0 ? Math.round(netSpent / effBudget * 100) : 0;
+        : Math.max(0, C.round2(effBudget - spendOnly)));
+    var usePct = effBudget > 0 ? Math.round(spendOnly / effBudget * 100) : 0;
 
     /* 环形图数据 */
     var segs = [];
@@ -744,7 +744,7 @@
         (settings.savingsTarget > 0
           ? '<div class="proj-row" style="padding-top:0"><span>本月存钱目标</span><b class="pos">' + C.fmtMoney(settings.savingsTarget) + '</b></div>'
           : '') +
-        '<div class="proj-row" style="padding-top:0"><span style="color:var(--text-3);font-size:11.5px">净支出 ' + C.fmtMoney(netSpent) + ' · 使用率 ' + usePct + '%' + (monthAllowance > 0 ? ' · 生活费 +' + C.fmtMoney(monthAllowance) : '') + '</span></div>' +
+        '<div class="proj-row" style="padding-top:0"><span style="color:var(--text-3);font-size:11.5px">支出 ' + C.fmtMoney(spendOnly) + ' · 使用率 ' + usePct + '% · 预算内其余收入不抵扣</span></div>' +
         '<div class="bar' + (usePct > 100 ? ' over' : (usePct >= 80 ? ' warn' : '')) + '" style="margin-top:6px"><i style="width:' + Math.min(100, Math.max(0, usePct)) + '%"></i></div>' +
         '</div>';
     }
